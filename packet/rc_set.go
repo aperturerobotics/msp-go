@@ -2,7 +2,6 @@ package packet
 
 import (
 	"bytes"
-	"errors"
 )
 
 // MspRcSet contains RC data to the FC.
@@ -13,7 +12,7 @@ import (
 // MessageID: 200
 type MspRcSet struct {
 	// Channels contains the RC values between 1000 and 2000.
-	Channels []uint16
+	Channels [ChannelCount]uint16
 }
 
 // New builds a new instance of the packet.
@@ -26,16 +25,17 @@ func (p *MspRcSet) GetID() uint8 {
 	return 200
 }
 
-// Marshal marshals the packet to a byte array.
-func (p *MspRcSet) Marshal() ([]byte, error) {
-	if len(p.Channels) != ChannelCount {
-		if len(p.Channels) == 0 {
-			p.Channels = make([]uint16, ChannelCount)
-		} else {
-			return nil, errors.New("incorrect channel count")
-		}
+// SetChannel sets channel index ch to value val which should be (1000, 2000).
+func (p *MspRcSet) SetChannel(ch ChannelID, val uint16) {
+	if ch >= ChannelCount {
+		return
 	}
 
+	p.Channels[ch] = val
+}
+
+// Marshal marshals the packet to a byte array.
+func (p *MspRcSet) Marshal() ([]byte, error) {
 	datas := make([]interface{}, ChannelCount)
 	for i := range p.Channels {
 		datas[i] = &p.Channels[i]
@@ -46,13 +46,11 @@ func (p *MspRcSet) Marshal() ([]byte, error) {
 
 // Unmarshal parses the byte array, filling the packet values.
 func (p *MspRcSet) Unmarshal(data []byte) error {
-	channels := make([]uint16, ChannelCount)
 	datas := make([]interface{}, ChannelCount)
-	for i := range channels {
-		datas[i] = &channels[i]
+	for i := range datas {
+		datas[i] = &p.Channels[i]
 	}
 
-	p.Channels = channels
 	return readLSB(bytes.NewReader(data), datas...)
 }
 
