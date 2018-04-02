@@ -93,14 +93,6 @@ func writeLSBBuf(datas ...interface{}) ([]byte, error) {
 
 // ReadRawPacket attempts to read a raw packet from the reader.
 func ReadRawPacket(r io.Reader) (rp *RawPacket, err error) {
-	defer func() {
-		var isRecognized bool
-		if rp != nil {
-			isRecognized = !rp.GetIsUnrecognized()
-		}
-		// fmt.Printf("read packet with err: %v is recognized: %v\n", err, isRecognized)
-	}()
-
 	// Wait until we see the magic preamble.
 	buf := make([]byte, 2)
 	for {
