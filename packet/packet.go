@@ -25,13 +25,13 @@ func registerPacketType(packet Packet) {
 }
 
 // ToRaw serializes a packet to a raw packet.
-func ToRaw(packet Packet, isRecv bool) (*RawPacket, error) {
+func ToRaw(packet Packet, isRecv, isUnrecognized bool) (*RawPacket, error) {
 	data, err := packet.Marshal()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewRawPacket(packet.GetID(), isRecv, data), nil
+	return NewRawPacket(packet.GetID(), isRecv, isUnrecognized, data), nil
 }
 
 // FromRaw decodes a raw packet to a packet.

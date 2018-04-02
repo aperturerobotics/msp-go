@@ -17,21 +17,25 @@ var (
 	dirToMWC = []byte(`<`)
 	// dirFromMWC is used when reading from the MWC
 	dirFromMWC = []byte(`>`)
+	// dirUnrecognized is used when the message is unknown
+	dirUnrecognized = []byte(`!`)
 )
 
 // RawPacket is a MSP packet ready to write to a stream.
 type RawPacket struct {
-	packetID uint8
-	recv     bool
-	data     []byte
+	packetID     uint8
+	recv         bool
+	unrecognized bool
+	data         []byte
 }
 
 // NewRawPacket builds a new raw packet.
-func NewRawPacket(packetID uint8, isRecv bool, data []byte) *RawPacket {
+func NewRawPacket(packetID uint8, isRecv bool, isUnrecognized bool, data []byte) *RawPacket {
 	return &RawPacket{
-		packetID: packetID,
-		recv:     isRecv,
-		data:     data,
+		packetID:     packetID,
+		recv:         isRecv,
+		data:         data,
+		unrecognized: isUnrecognized,
 	}
 }
 
@@ -43,6 +47,11 @@ func (p *RawPacket) GetID() uint8 {
 // GetIsRecv indicates if this is a packet received from the FC.
 func (p *RawPacket) GetIsRecv() bool {
 	return p.recv
+}
+
+// GetIsUnrecognized indicates if this packet indicated the peer did not recognize the packet.
+func (p *RawPacket) GetIsUnrecognized() bool {
+	return p.unrecognized
 }
 
 // GetData returns the in-band data.
@@ -82,13 +91,21 @@ func writeLSBBuf(datas ...interface{}) ([]byte, error) {
 	return (&buf).Bytes(), nil
 }
 
-// ReadRawPacket attempts to read a raw packet from the readep.
-func ReadRawPacket(r io.Reader) (*RawPacket, error) {
+// ReadRawPacket attempts to read a raw packet from the reader.
+func ReadRawPacket(r io.Reader) (rp *RawPacket, err error) {
+	defer func() {
+		var isRecognized bool
+		if rp != nil {
+			isRecognized = !rp.GetIsUnrecognized()
+		}
+		// fmt.Printf("read packet with err: %v is recognized: %v\n", err, isRecognized)
+	}()
+
 	// Wait until we see the magic preamble.
 	buf := make([]byte, 2)
 	for {
 		buf[0] = buf[1]
-		err := readLSB(r, buf[1:])
+		err := readLSB(r, &buf[1])
 		if err != nil {
 			return nil, err
 		}
@@ -99,16 +116,25 @@ func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	}
 
 	// Read the direction ID
-	if err := readLSB(r, buf[0:1]); err != nil {
+	var dirID byte
+	if err := readLSB(r, &dirID); err != nil {
 		return nil, err
 	}
 
 	var isRecv bool
-	switch buf[0] {
+	var isUnrecognized bool
+	switch dirID {
+	case dirUnrecognized[0]:
+		isUnrecognized = true
+		fallthrough
 	case dirFromMWC[0]:
 		isRecv = true
 	default:
-		return nil, errors.Errorf("unexpected direction indicator: %v", buf[0])
+		return nil, errors.Errorf(
+			"unexpected direction indicator: %v (%s)",
+			dirID,
+			string([]rune{rune(dirID)}),
+		)
 	case dirToMWC[0]:
 	}
 
@@ -137,7 +163,7 @@ func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	}
 
 	// Build packet
-	pkt := NewRawPacket(messageID, isRecv, dataBuf)
+	pkt := NewRawPacket(messageID, isRecv, isUnrecognized, dataBuf)
 	if expectedCrc := pkt.getCrc(); expectedCrc != crc {
 		return nil, errors.Errorf(
 			"incoming crc %v != expected %v data len %d",

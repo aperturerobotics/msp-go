@@ -6,11 +6,14 @@ import (
 	"sync"
 
 	"github.com/aperturerobotics/msp-go/packet"
+	"github.com/pkg/errors"
 )
 
 // Device represents a remote MSP device.
 type Device struct {
-	tpt      io.ReadWriter
+	tpt io.ReadWriter
+
+	reqMtx   sync.Mutex
 	writeMtx sync.Mutex
 	readMtx  sync.Mutex
 }
@@ -32,7 +35,7 @@ func (d *Device) initConnection(ctx context.Context) error {
 
 // WritePacket sends a packet to the device.
 func (d *Device) WritePacket(pkt packet.Packet) error {
-	rawPkt, err := packet.ToRaw(pkt, false)
+	rawPkt, err := packet.ToRaw(pkt, false, false)
 	if err != nil {
 		return err
 	}
@@ -54,4 +57,39 @@ func (d *Device) ReadPacket() (packet.Packet, error) {
 	}
 
 	return packet.FromRaw(rawPkt)
+}
+
+// Request requests that the MSP fill the packet with data.
+func (d *Device) Request(ctx context.Context, pkt packet.Packet) error {
+	d.reqMtx.Lock()
+	defer d.reqMtx.Unlock()
+
+	if err := d.WritePacket(pkt); err != nil {
+		return err
+	}
+
+	d.readMtx.Lock()
+	rawPkt, err := packet.ReadRawPacket(d.tpt)
+	d.readMtx.Unlock()
+	if err != nil {
+		return err
+	}
+
+	if rawPkt.GetID() != pkt.GetID() {
+		return errors.Errorf(
+			"received unexpected response to packet %d: id %d len %d",
+			pkt.GetID(),
+			rawPkt.GetID(),
+			len(rawPkt.GetData()),
+		)
+	}
+
+	if rawPkt.GetIsUnrecognized() {
+		return errors.Errorf(
+			"received unrecognized response to packet %d",
+			pkt.GetID(),
+		)
+	}
+
+	return pkt.Unmarshal(rawPkt.GetData())
 }
