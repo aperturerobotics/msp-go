@@ -1,4 +1,4 @@
-package msp
+package packet
 
 import (
 	"bytes"

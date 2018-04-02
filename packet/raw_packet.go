@@ -1,4 +1,4 @@
-package msp
+package packet
 
 import (
 	"bytes"
@@ -35,12 +35,54 @@ func NewRawPacket(packetID uint8, isRecv bool, data []byte) *RawPacket {
 	}
 }
 
-// readLSB reads with the correct endian conversion.
-func readLSB(r io.Reader, data []byte) error {
-	return binary.Read(r, binary.LittleEndian, data)
+// GetID returns the packet ID.
+func (p *RawPacket) GetID() uint8 {
+	return p.packetID
 }
 
-// ReadRawPacket attempts to read a raw packet from the reader.
+// GetIsRecv indicates if this is a packet received from the FC.
+func (p *RawPacket) GetIsRecv() bool {
+	return p.recv
+}
+
+// GetData returns the in-band data.
+func (p *RawPacket) GetData() []byte {
+	return p.data
+}
+
+// readLSB reads with the correct endian conversion.
+func readLSB(r io.Reader, datas ...interface{}) error {
+	for _, data := range datas {
+		if err := binary.Read(r, binary.LittleEndian, data); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeLSB writes with the correct endian conversion.
+func writeLSB(w io.Writer, datas ...interface{}) error {
+	for _, data := range datas {
+		if err := binary.Write(w, binary.LittleEndian, data); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeLSBBuf writes with the correct endian conversion to a buffep.
+func writeLSBBuf(datas ...interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := writeLSB(&buf, datas...); err != nil {
+		return nil, err
+	}
+
+	return (&buf).Bytes(), nil
+}
+
+// ReadRawPacket attempts to read a raw packet from the readep.
 func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	// Wait until we see the magic preamble.
 	buf := make([]byte, 2)
@@ -70,23 +112,17 @@ func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	case dirToMWC[0]:
 	}
 
-	// Read the size
-	if err := readLSB(r, buf[0:1]); err != nil {
+	// Read the size and command
+	var messageID uint8
+	var dataSize uint8
+	if err := readLSB(r, &dataSize, &messageID); err != nil {
 		return nil, err
 	}
 
 	// Cast the size to a uint8
-	dataSize := uint8(buf[0])
 	if dataSize > maxPacketSize {
 		return nil, errors.Errorf("unexpected data size: %v", dataSize)
 	}
-
-	// Read the command
-	if err := readLSB(r, buf[0:1]); err != nil {
-		return nil, err
-	}
-
-	messageID := uint8(buf[0])
 
 	// Read data
 	dataBuf := make([]byte, dataSize)
@@ -95,11 +131,10 @@ func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	}
 
 	// Read CRC
-	if err := readLSB(r, buf[0:1]); err != nil {
+	var crc uint8
+	if err := readLSB(r, &crc); err != nil {
 		return nil, err
 	}
-
-	crc := uint8(buf[0])
 
 	// Build packet
 	pkt := NewRawPacket(messageID, isRecv, dataBuf)
@@ -115,7 +150,7 @@ func ReadRawPacket(r io.Reader) (*RawPacket, error) {
 	return pkt, nil
 }
 
-// WriteTo serializes the packet and writes it to a writer.
+// WriteTo serializes the packet and writes it to a writep.
 func (p *RawPacket) WriteTo(w io.Writer) (n int64, err error) {
 	return p.writeFuncs([]func() (n int, err error){
 		// Preamble
@@ -126,11 +161,6 @@ func (p *RawPacket) WriteTo(w io.Writer) (n int64, err error) {
 		p.writeLSBFunc(w, p.data),
 		p.writeLSBFunc(w, p.getCrc()),
 	})
-}
-
-// GetData returns the inner packet data.
-func (p *RawPacket) GetData() []byte {
-	return p.data
 }
 
 // getDirectionID returns the code for the direction this packet is going.

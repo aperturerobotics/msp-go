@@ -1,4 +1,8 @@
-package msp
+package packet
+
+import "github.com/pkg/errors"
+
+var errNotImplemented = errors.New("packet not implemented")
 
 // Packet contains a defined packet for the MSP protocol.
 type Packet interface {
@@ -20,12 +24,28 @@ func registerPacketType(packet Packet) {
 	packetTypes[packet.GetID()] = packet
 }
 
-// PacketToRaw serializes a packet to a raw packet.
-func PacketToRaw(packet Packet, isRecv bool) (*RawPacket, error) {
+// ToRaw serializes a packet to a raw packet.
+func ToRaw(packet Packet, isRecv bool) (*RawPacket, error) {
 	data, err := packet.Marshal()
 	if err != nil {
 		return nil, err
 	}
 
 	return NewRawPacket(packet.GetID(), isRecv, data), nil
+}
+
+// FromRaw decodes a raw packet to a packet.
+func FromRaw(rawPacket *RawPacket) (Packet, error) {
+	pid := rawPacket.GetID()
+	pt, ok := packetTypes[pid]
+	if !ok {
+		return nil, errors.Errorf("unknown packet type: %d", pid)
+	}
+
+	pak := pt.New()
+	if err := pak.Unmarshal(rawPacket.GetData()); err != nil {
+		return nil, err
+	}
+
+	return pak, nil
 }
