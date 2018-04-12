@@ -32,6 +32,8 @@ func identifyDevice(ctx *cli.Context) error {
 		&packet.MspModeRanges{},
 		&packet.MspAltitude{},
 		&packet.MspAttitude{},
+		&packet.MspRc{},
+		&packet.MspAnalog{},
 	}
 
 	for _, pkt := range pkts {

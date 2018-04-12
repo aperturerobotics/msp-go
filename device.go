@@ -91,5 +91,11 @@ func (d *Device) Request(ctx context.Context, pkt packet.Packet) error {
 		)
 	}
 
-	return pkt.Unmarshal(rawPkt.GetData())
+	if len(rawPkt.GetData()) > 0 {
+		if err := pkt.Unmarshal(rawPkt.GetData()); err != nil {
+			return errors.Wrap(err, "unmarshal packet")
+		}
+	}
+
+	return nil
 }
